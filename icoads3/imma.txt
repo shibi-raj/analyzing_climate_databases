@@ -1,0 +1,53 @@
+No. Len. Abbr. Element description Scaled Min. Scaled Max. Units (Code) [base36]
+
+Location section (45 characters):
+1 4 YR year UTC 1600 2024 (AAAA)
+2 2 MO month UTC1 1 12 (MM)
+3 2 DY day UTC1 1 31 (YY)
+4 4 HR hour UTC1 0 23.99 0.01 hour (∆ GG)
+5 5 LAT latitude –90.00 90.00 0.01°N (∆ LaLaLa)
+6 6 LON longitude1 –179.99 359.99 0.01°E (∆ LoLoLoLo); 0.00 359.99 (ICOADS convention); –179.99 180.00 (obsolete NCDC-variant)
+7 2 IM IMMA version 0 99 (∆ •65)
+8 1 ATTC attm count 0 [0] 35 [Z] [b36]
+9 1 TI time indicator 0 3
+10 1 LI latitude/long. indic. 0 6
+11 1 DS ship course 0 9 (Ds)
+12 1 VS ship speed 0 9 (∆ vs)
+13 2 NID national source indic.1 0 99
+14 2 II ID indicator 0 10
+15 9 ID identification/callsign c c (∆ •42)
+16 2 C1 country code b b (∆ •43)
+
+Regular section (63 characters):
+17 1 DI wind direction indic. 0 6
+18 3 D wind direction (true) 1 362 °, 361-2 (∆ dd)
+19 1 WI wind speed indicator 0 8 (∆ iW)
+20 3 W wind speed 0 99.9 0.1 m/s (∆ ff)
+21 1 VI VV indic. 0 2 (∆ •9)
+22 2 VV visibility 90 99 (VV)
+23 2 WW present weather 0 99 (ww)
+24 1 W1 past weather 0 9 (W1)
+25 5 SLP sea level pressure 870.0 1074.6 0.1 hPa (∆ PPPP)
+26 1 A characteristic of PPP 0 8 (a)
+27 3 PPP amt. pressure tend. 0 51.0 0.1 hPa (ppp)
+28 1 IT indic. for temperatures 0 9 (∆ iT)
+29 4 AT air temperature –99.9 99.9 0.1°C (∆ sn, TTT)
+30 1 WBTI WBT indic. 0 3 (∆ sw)
+31 4 WBT wet-bulb temperature –99.9 99.9 0.1°C (∆ sw, TbTbTb)
+32 1 DPTI DPT indic. 0 3 (∆ st)
+33 4 DPT dew-point temperature –99.9 99.9 0.1°C (∆ st, TdTdTd)
+34 2 SI SST meas. method 0 12 (∆ •30)
+35 4 SST sea surface temp. –99.9 99.9 0.1°C (∆ sn, TwTwTw)
+36 1 N total cloud amount 0 9 (N)
+37 1 NH lower cloud amount 0 9 (Nh)
+38 1 CL low cloud type 0 [0] 10 [A] (∆ CL) [b36]
+39 1 HI H indic. 0 1 (∆ •9)
+40 1 H cloud height 0 [0] 10 [A] (∆ h) [b36]
+41 1 CM middle cloud type 0 [0] 10 [A] (∆ CM) [b36]
+42 1 CH high cloud type 0 [0] 10 [A] (∆ CH) [b36]
+43 2 WD wave direction 0 38
+44 2 WP wave period 0 30, 99 seconds (PWPW)
+45 2 WH wave height 0 99 (HWHW)
+46 2 SD swell direction 0 38 (dW1dW1)
+47 2 SP swell period 0 30, 99 seconds (PW1PW1)
+48 2 SH swell height 0 99 (HW1HW1) 
