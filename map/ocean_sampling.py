@@ -1,10 +1,17 @@
 #!/usr/bin/env/python3
-"""Set of functions to 
+"""Set of functions to put equal area boxes on the worlds' oceans.  
+
+Features still desired:
+    Add logic so boxes only appear on oceans, not land
+    Add ids to each box, paired with coordinates of box
+    May need partial areas for boxes that overlap ocean and land    
+    Boxes are cartesian then projected - may need boxes in spherical coordinates
+    This is a heavy calculation, no doubt optimization will be required
 """
 from mpl_toolkits.basemap import Basemap, pyproj
+from matplotlib.path import Path
 from matplotlib.patches import Polygon
 from matplotlib.collections import PolyCollection
-from matplotlib.path import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -119,7 +126,7 @@ def lon_box_chain(proj,lat,del_lon,size):
         boxes.append(make_patch(proj,pt[0],pt[1],size))
     return boxes
 
-def main():
+def make_plot():
 
     # Figure
     fig = plt.figure()
@@ -153,4 +160,4 @@ def main():
 
 if __name__ == '__main__':
 
-    main()
+    make_plot()
