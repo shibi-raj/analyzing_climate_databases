@@ -1,17 +1,24 @@
 #!/usr/bin/env/python3
 """Set of functions to put equal area boxes on the worlds' oceans.  
 
-Features still desired:
-    Add logic so boxes only appear on oceans, not land
-    Add ids to each box, paired with coordinates of box
+Updates:
+    
+    7/25/2016
+    Added logic so boxes only appear on oceans, not land
+    Boxes drawn in spherical coordinates, 1 mile on each of three sides, most
+        northern depends on latutide
+
+To do:
+    Optimize land recognition
+    Numpy: index each box - should contain:
+        (ids, coordinates, area)
     May need partial areas for boxes that overlap ocean and land    
-    Boxes are cartesian then projected - may need boxes in spherical coordinates
-    This is a heavy calculation, no doubt optimization will be required
 """
 from mpl_toolkits.basemap import Basemap, pyproj
-from matplotlib.path import Path
 from matplotlib.patches import Polygon
 from matplotlib.collections import PolyCollection
+from matplotlib.path import Path
+import matplotlib.patches as patches
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -84,7 +91,7 @@ def lat_angle(proj,pt1,dist,longitude=False):
         lon2, lat2 = proj(x+dist,y,inverse=True)
     return [lon2,lat2]
 
-def make_patch(proj,lon,lat,side):
+def make_patch(proj,lon,lat,delphi,delthe):
     """Given the location of the lower-left corner of a patch and the length of
     the sides, calculate the coordinates of a square patch at that location.
     
@@ -93,71 +100,81 @@ def make_patch(proj,lon,lat,side):
         lat: latitude ll corner
         side: length of side of the square patch
     """
+    aug_lon = lon+delphi
+    aug_lat = lat+delthe
     pt00 = [lon,lat]
-    pt01 = lat_angle(proj,pt00,side)
-    pt10 = lat_angle(proj,pt00,side,longitude=True)
-    pt11 = [pt10[0],pt01[1]]
+    pt01 = [lon,aug_lat]
+    pt10 = [aug_lon,lat]
+    pt11 = [aug_lon,aug_lat]
     pts = [pt00,pt01,pt11,pt10]
     lons,lats = zip(*pts)
     lons = list(lons)
     lats = list(lats)
     return lons,lats
 
-def lon_box_chain(proj,lat,del_lon,size):
+def lon_box_chain(proj,lat,del_lon,size,lon_0=0.):
     """Create adjoining boxes same latitude through specified longitudinal 
     angle.  Boxes start at Prime Meridian and travel East.
     """
-    # Create beginning and end points
-    pt1 = (0.,lat)
-    x0,y0 = proj(pt1[0],pt1[1])
-    pt2 = (del_lon,lat)
+    # Calculate increment of longitude, delta phi
+    R = 6371000.
+    delphi = size/R*math.cos(lat*math.pi/180.)
+    delphi = delphi*180/math.pi
 
-    # Find distance through the longitudinal angle at same latitude
-    lon_dist = lon_distance(proj,pt1,pt2)
+    # Calculate increment in latitude, delta theta
+    delthe = size/R
+    delthe = delthe*180/math.pi
 
-    # Find lower left corner of each box
-    X = (np.arange(0.,lon_dist,size) + x0).tolist()
-    Y = [y0 for x in X]
-    
-    # Return to angles
-    pts = [proj(x,y,inverse=True) for x,y in zip(X,Y)]
+    # print('angle increments',delphi,delthe,math.cos(lat*math.pi/180)*delphi)
+
+    # Same for angles
+    lons = lon_0 + np.arange(0.,del_lon,delphi)
+    lats = [lat for lon in lons]
+    pts = list(zip(lons,lats))
     boxes = list()
     for pt in pts:
-        boxes.append(make_patch(proj,pt[0],pt[1],size))
+        boxes.append(make_patch(proj,pt[0],pt[1],delphi,delthe))
     return boxes
 
-def make_plot():
+def main():
 
-    # Figure
     fig = plt.figure()
     ax = fig.add_subplot(1,1,1)
 
-    # Basemap
+ 
     m = Basemap(projection='hammer',lat_0=50.,lon_0=-40.,ax=ax)
+    # m = Basemap(projection='merc', resolution='c')
     m.drawcoastlines()
     m.fillcontinents(color='coral')
     m.drawmeridians(np.arange(0,40,10.))
 
-    # Get contiguous boxes at equal latitudes    
+    # Parameters for contiguous boxes
     lon_0 = 0.
     lat_0 = 0.
-    box_size = 100000.
-    del_lon = 90.
-    boxes = lon_box_chain(m,lat_0,del_lon,box_size)
+    del_lon = 50.
+    box_size = 10000.
 
-    # Test if boxes only in ocean, and, if so, add to plot 
+    boxes = lon_box_chain(m,lat_0,del_lon,box_size,lon_0)
     polygons = [Path(p.boundary) for p in m.landpolygons]
 
+    # View individual continent polygon patches
+    # poly = patches.PathPatch(polygons[6], facecolor='b', lw=2)
+    # ax.add_patch(poly)
+
+    all_boxes = list()
     for box in boxes:
-        # print(box)
+        # Get x,y from lon,lat of box corners
         x,y = m(box[0],box[1])
         vertices = tuple(zip(x,y))
-        for polygon in polygons:
-            if not any (polygon.contains_points(vertices)):
-                coll = Polygon(vertices,closed=True,color='r',linestyle='solid',fc='b')
-                ax.add_patch(coll)
+
+        # Set up generator of booleans for continental intersection
+        poly_bool = (p.contains_points(vertices).any() for p in polygons)
+        if not any(poly_bool):
+            # all_boxes.append(box)
+            coll = Polygon(vertices,closed=True)
+            ax.add_patch(coll)
     plt.show()
 
 if __name__ == '__main__':
 
-    make_plot()
+    main()
