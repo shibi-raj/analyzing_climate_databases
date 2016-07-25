@@ -10,10 +10,10 @@ Updates:
 
 To do:
 
-        Optimize land recognition
+        Optimize land recognition - only check ocean patch overlaps land locally
+        May need partial areas for boxes that overlap ocean and land    
         Numpy: index each box - should contain:
             (ids, coordinates, area)
-        May need partial areas for boxes that overlap ocean and land    
 """
 from mpl_toolkits.basemap import Basemap, pyproj
 from matplotlib.patches import Polygon
@@ -137,8 +137,29 @@ def lon_box_chain(proj,size=100000.,lon_0=0.,lat_0=0.,del_lon= 50.):
         boxes.append(make_box(proj,pt[0],pt[1],delphi,delthe))
     return delthe,delphi,boxes
 
-def pick_polygons():
-    pass
+def pick_polygons(m,polygons,lat,delthe=1.):
+    """Optimizing on-land box recognition by choosing only land polygons having
+    values within latitudes spanned by the box.
+
+    Example:
+        If we circle the equator, lat = 0, and the box has a mile side, 
+        ~.9 degree:
+            lats = [0,.9] 
+        Greenland, for example, does not fall within this range, so exclude it.
+    """
+    lats = [lat-delthe,lat+2*delthe]
+    lons = [0.,0.]
+    x,y = m(lons,lats)
+
+    polygons = polygons
+
+    inds = list()
+    for i,array in enumerate(polygons):
+        if np.where(np.logical_and(array[:,1] > y[0],array[:,1] < y[1]))[0].any():
+            inds.append(i)
+
+    polygons = [Path(polygons[i]) for i in inds]
+    return polygons
 
 def main():
 
@@ -154,7 +175,7 @@ def main():
     m.drawmeridians(np.arange(0,40,10.))
 
     # Get all land polygons
-    polygons = [Path(p.boundary) for p in m.landpolygons]
+    polygons = [p.boundary for p in m.landpolygons]
     # View individual continent polygon patches
     # poly = patches.PathPatch(polygons[6], facecolor='b', lw=2)
     # ax.add_patch(poly)
@@ -177,14 +198,17 @@ def main():
             vertices = tuple(zip(x,y))
 
             # Set up generator of booleans for continental intersection
-            poly_bool = (p.contains_points(vertices).any() for p in polygons)
+            sub_polygons = pick_polygons(m,polygons,lat_0,delthe=delthe)
+            # poly_bool = (p.contains_points(vertices).any() for p in poly_subset)
+
+            poly_bool = (p.contains_points(vertices).any() for p in sub_polygons)
             if not any(poly_bool):
                 coll = Polygon(vertices,closed=True)
                 ax.add_patch(coll)
 
         # print(lat_0,lat_0+delthe)
         lat_0 = lat_0+delthe
-        print(lat_0,delthe,upper_lat)
+        # print(lat_0,delthe,upper_lat)
 
     plt.show()
 
