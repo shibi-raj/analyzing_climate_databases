@@ -3,16 +3,17 @@
 
 Updates:
     
-    7/25/2016
-    Added logic so boxes only appear on oceans, not land
-    Boxes drawn in spherical coordinates, 1 mile on each of three sides, most
+        7/25/2016
+        Added logic so boxes only appear on oceans, not land
+        Boxes drawn in spherical coordinates, 1 mile on each of three sides, most
         northern depends on latutide
 
 To do:
-    Optimize land recognition
-    Numpy: index each box - should contain:
-        (ids, coordinates, area)
-    May need partial areas for boxes that overlap ocean and land    
+
+        Optimize land recognition
+        Numpy: index each box - should contain:
+            (ids, coordinates, area)
+        May need partial areas for boxes that overlap ocean and land    
 """
 from mpl_toolkits.basemap import Basemap, pyproj
 from matplotlib.patches import Polygon
@@ -91,7 +92,7 @@ def lat_angle(proj,pt1,dist,longitude=False):
         lon2, lat2 = proj(x+dist,y,inverse=True)
     return [lon2,lat2]
 
-def make_patch(proj,lon,lat,delphi,delthe):
+def make_box(proj,lon,lat,delphi,delthe):
     """Given the location of the lower-left corner of a patch and the length of
     the sides, calculate the coordinates of a square patch at that location.
     
@@ -112,29 +113,32 @@ def make_patch(proj,lon,lat,delphi,delthe):
     lats = list(lats)
     return lons,lats
 
-def lon_box_chain(proj,lat,del_lon,size,lon_0=0.):
+def lon_box_chain(proj,size=100000.,lon_0=0.,lat_0=0.,del_lon= 50.):
     """Create adjoining boxes same latitude through specified longitudinal 
     angle.  Boxes start at Prime Meridian and travel East.
+
+    Also, returns the box angular width and height
     """
-    # Calculate increment of longitude, delta phi
+    # Calculate increment of longitude (angular width), delta phi
     R = 6371000.
-    delphi = size/R*math.cos(lat*math.pi/180.)
+    delphi = size/R*math.cos(lat_0*math.pi/180.)
     delphi = delphi*180/math.pi
 
-    # Calculate increment in latitude, delta theta
+    # Calculate increment in latitude (angular height), delta theta
     delthe = size/R
     delthe = delthe*180/math.pi
-
-    # print('angle increments',delphi,delthe,math.cos(lat*math.pi/180)*delphi)
-
-    # Same for angles
+    
+    # Calculate lons/lats for ll corner of each box
     lons = lon_0 + np.arange(0.,del_lon,delphi)
-    lats = [lat for lon in lons]
+    lats = [lat_0 for lon in lons]
     pts = list(zip(lons,lats))
     boxes = list()
     for pt in pts:
-        boxes.append(make_patch(proj,pt[0],pt[1],delphi,delthe))
-    return boxes
+        boxes.append(make_box(proj,pt[0],pt[1],delphi,delthe))
+    return delthe,delphi,boxes
+
+def pick_polygons():
+    pass
 
 def main():
 
@@ -142,38 +146,48 @@ def main():
     ax = fig.add_subplot(1,1,1)
 
  
+    # m = Basemap(projection='hammer',lat_0=50.,lon_0=-40.)
     m = Basemap(projection='hammer',lat_0=50.,lon_0=-40.,ax=ax)
     # m = Basemap(projection='merc', resolution='c')
     m.drawcoastlines()
-    m.fillcontinents(color='coral')
+    # m.fillcontinents(color='coral')
     m.drawmeridians(np.arange(0,40,10.))
 
-    # Parameters for contiguous boxes
-    lon_0 = 0.
-    lat_0 = 0.
-    del_lon = 50.
-    box_size = 10000.
-
-    boxes = lon_box_chain(m,lat_0,del_lon,box_size,lon_0)
+    # Get all land polygons
     polygons = [Path(p.boundary) for p in m.landpolygons]
-
     # View individual continent polygon patches
     # poly = patches.PathPatch(polygons[6], facecolor='b', lw=2)
     # ax.add_patch(poly)
+    
+    # Parameters for contiguous boxes
+    lon_0 = 0.
+    lat_0 = -45.
+    del_lon = 90.
+    del_lat = 90.0
+    box_size = 1600.
+    upper_lat = lat_0 + del_lat
+    while lat_0 <= upper_lat:
+        
+        # Get angular height, width, and contiguous boxes
+        delthe,_,boxes = lon_box_chain(m,lat_0=lat_0,del_lon=del_lon)
+        for box in boxes:
+            
+            # Get x,y from lon,lat of box corners
+            x,y = m(box[0],box[1])
+            vertices = tuple(zip(x,y))
 
-    all_boxes = list()
-    for box in boxes:
-        # Get x,y from lon,lat of box corners
-        x,y = m(box[0],box[1])
-        vertices = tuple(zip(x,y))
+            # Set up generator of booleans for continental intersection
+            poly_bool = (p.contains_points(vertices).any() for p in polygons)
+            if not any(poly_bool):
+                coll = Polygon(vertices,closed=True)
+                ax.add_patch(coll)
 
-        # Set up generator of booleans for continental intersection
-        poly_bool = (p.contains_points(vertices).any() for p in polygons)
-        if not any(poly_bool):
-            # all_boxes.append(box)
-            coll = Polygon(vertices,closed=True)
-            ax.add_patch(coll)
+        # print(lat_0,lat_0+delthe)
+        lat_0 = lat_0+delthe
+        print(lat_0,delthe,upper_lat)
+
     plt.show()
+
 
 if __name__ == '__main__':
 
