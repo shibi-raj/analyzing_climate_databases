@@ -3,17 +3,34 @@
 
 Updates:
     
-        7/25/2016
+    7/27/2016
+        Tried optimization by using continent data at restricted latitude as 
+        foreknowledge when placing boxes.  No need for this, checking whether in
+        polygons is simple enough and not computationally heavy.  Tried first 
+        with coast data, too complicated.
+
+    7/26/2016
+        Added optimizations
+        Timing benchmark (without showing plot):
+        • parameters
+            lon_0 = 0.
+            lat_0 = -45.
+            del_lon = 90.
+            del_lat = 90.0
+            box_size = 1600.
+        • No face color on boxes & without showing plot:  27.3 s
+        • With PolyCollection instead of Polygon: 24.1 s
+        • Replaced projected coordinates zip with np.dstack: 23.6
+    
+    7/25/2016
         Added logic so boxes only appear on oceans, not land
         Boxes drawn in spherical coordinates, 1 mile on each of three sides, most
         northern depends on latutide
 
 To do:
-
-        Optimize land recognition - only check ocean patch overlaps land locally
-        May need partial areas for boxes that overlap ocean and land    
-        Numpy: index each box - should contain:
-            (ids, coordinates, area)
+    Need partial areas for boxes that overlap ocean and land?
+    Numpy: index each box - should contain:
+        (ids, coordinates, area)
 """
 from mpl_toolkits.basemap import Basemap, pyproj
 from matplotlib.patches import Polygon
@@ -126,7 +143,7 @@ def lon_box_chain(proj,size=100000.,lon_0=0.,lat_0=0.,del_lon= 50.):
 
     # Calculate increment in latitude (angular height), delta theta
     delthe = size/R
-    delthe = delthe*180/math.pi
+    delthe = delthe*180./math.pi
     
     # Calculate lons/lats for ll corner of each box
     lons = lon_0 + np.arange(0.,del_lon,delphi)
@@ -145,7 +162,8 @@ def pick_polygons(m,polygons,lat,delthe=1.):
         If we circle the equator, lat = 0, and the box has a mile side, 
         ~.9 degree:
             lats = [0,.9] 
-        Greenland, for example, does not fall within this range, so exclude it.
+        Greenland, for example, does not fall within this range, so do not check
+        it.
     """
     lats = [lat-delthe,lat+2*delthe]
     lons = [0.,0.]
@@ -161,58 +179,60 @@ def pick_polygons(m,polygons,lat,delthe=1.):
     polygons = [Path(polygons[i]) for i in inds]
     return polygons
 
-def main():
+def ocean_grid(plot=False):
+    """Create plot for creating boxes of (nearly) equal side length.  The map
+    plot is a visual representation of the most important part, the grid.  The
+    grid is an indexed by the lower lefthand corner of the boxes. 
+    """
 
-    fig = plt.figure()
-    ax = fig.add_subplot(1,1,1)
-
- 
-    # m = Basemap(projection='hammer',lat_0=50.,lon_0=-40.)
-    m = Basemap(projection='hammer',lat_0=50.,lon_0=-40.,ax=ax)
-    # m = Basemap(projection='merc', resolution='c')
-    m.drawcoastlines()
-    # m.fillcontinents(color='coral')
-    m.drawmeridians(np.arange(0,40,10.))
+    # Set up figure and map
+    if plot:
+        fig = plt.figure()
+        ax = fig.add_subplot(1,1,1)
+        m = Basemap(projection='hammer',lat_0=50.,lon_0=-40.,ax=ax)
+        m.drawcoastlines()
+        m.drawmeridians(np.arange(0,40,10.))
+    else:
+        m = Basemap(projection='hammer',lat_0=50.,lon_0=-40.)
 
     # Get all land polygons
     polygons = [p.boundary for p in m.landpolygons]
-    # View individual continent polygon patches
-    # poly = patches.PathPatch(polygons[6], facecolor='b', lw=2)
-    # ax.add_patch(poly)
     
-    # Parameters for contiguous boxes
-    lon_0 = 0.
-    lat_0 = -45.
-    del_lon = 90.
-    del_lat = 90.0
-    box_size = 1600.
+    # Input parameters for where to place contiguous boxes on map
+    lon_0 = -20.
+    lat_0 = 30.
+    del_lon = 60.
+    del_lat = 40.
+    box_size = 10000.
+    # box_size = 1609.344
     upper_lat = lat_0 + del_lat
+
+    all_vertices = list()
     while lat_0 <= upper_lat:
         
         # Get angular height, width, and contiguous boxes
-        delthe,_,boxes = lon_box_chain(m,lat_0=lat_0,del_lon=del_lon)
+        delthe,_,boxes = lon_box_chain(m,size=box_size,lon_0=lon_0,
+                                        lat_0=lat_0,del_lon=del_lon)
         for box in boxes:
             
-            # Get x,y from lon,lat of box corners
+            # Get x,y from all four lon,lat of box corners
             x,y = m(box[0],box[1])
-            vertices = tuple(zip(x,y))
+            vertices = np.dstack((x,y))[0]
 
             # Set up generator of booleans for continental intersection
-            sub_polygons = pick_polygons(m,polygons,lat_0,delthe=delthe)
-            # poly_bool = (p.contains_points(vertices).any() for p in poly_subset)
+            polygons = [Path(p.boundary) for p in m.landpolygons]
 
-            poly_bool = (p.contains_points(vertices).any() for p in sub_polygons)
+            poly_bool = (p.contains_points(vertices).any() for p in polygons)
             if not any(poly_bool):
-                coll = Polygon(vertices,closed=True)
-                ax.add_patch(coll)
+                all_vertices.append(vertices)
 
-        # print(lat_0,lat_0+delthe)
         lat_0 = lat_0+delthe
-        # print(lat_0,delthe,upper_lat)
 
-    plt.show()
+    if plot:
+        coll = PolyCollection(all_vertices,facecolor='none',closed=True)
+        ax.add_collection(coll)
+        plt.show()
 
 
 if __name__ == '__main__':
-
-    main()
+    ocean_grid()
