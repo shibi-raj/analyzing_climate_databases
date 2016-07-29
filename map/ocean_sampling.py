@@ -130,9 +130,9 @@ def make_box(proj,lon,lat,delphi,delthe):
     lats = list(lats)
     return lons,lats
 
-def lon_box_chain(proj,size=100000.,lon_0=0.,lat_0=0.,del_lon= 50.):
+def lon_box_chain(proj,size=100000.,lon_0=0.,lat_0=0.,del_lon=50.):
     """Create adjoining boxes same latitude through specified longitudinal 
-    angle.  Boxes start at Prime Meridian and travel East.
+    angle.  Boxes start at Prime Meridian and travels East.
 
     Also, returns the box angular width and height
     """
@@ -165,7 +165,7 @@ def pick_polygons(m,polygons,lat,delthe=1.):
         Greenland, for example, does not fall within this range, so do not check
         it.
     """
-    lats = [lat-delthe,lat+2*delthe]
+    lats = [lat-.5,lat+.5]
     lons = [0.,0.]
     x,y = m(lons,lats)
 
@@ -184,8 +184,7 @@ def ocean_grid(plot=False):
     plot is a visual representation of the most important part, the grid.  The
     grid is an indexed by the lower lefthand corner of the boxes. 
     """
-
-    # Set up figure and map
+    # Set up figure and map if plot=True
     if plot:
         fig = plt.figure()
         ax = fig.add_subplot(1,1,1)
@@ -195,37 +194,36 @@ def ocean_grid(plot=False):
     else:
         m = Basemap(projection='hammer',lat_0=50.,lon_0=-40.)
 
-    # Get all land polygons
+    # Get land polygons
     polygons = [p.boundary for p in m.landpolygons]
-    
-    # Input parameters for where to place contiguous boxes on map
+
+    # Set parameters for ocean grid coverage
     lon_0 = -20.
     lat_0 = 30.
     del_lon = 60.
     del_lat = 40.
-    box_size = 10000.
+    box_size = 100000.
     # box_size = 1609.344
     upper_lat = lat_0 + del_lat
 
     all_vertices = list()
     while lat_0 <= upper_lat:
         
-        # Get angular height, width, and contiguous boxes
+        # Return angular height, width, and the contiguous boxes
         delthe,_,boxes = lon_box_chain(m,size=box_size,lon_0=lon_0,
                                         lat_0=lat_0,del_lon=del_lon)
+
+        subpolys = pick_polygons(m,polygons,lat_0,delthe)
         for box in boxes:
             
             # Get x,y from all four lon,lat of box corners
             x,y = m(box[0],box[1])
             vertices = np.dstack((x,y))[0]
 
-            # Set up generator of booleans for continental intersection
-            polygons = [Path(p.boundary) for p in m.landpolygons]
-
-            poly_bool = (p.contains_points(vertices).any() for p in polygons)
+            poly_bool = (p.contains_points(vertices).any() for p in subpolys)
             if not any(poly_bool):
                 all_vertices.append(vertices)
-
+        
         lat_0 = lat_0+delthe
 
     if plot:
