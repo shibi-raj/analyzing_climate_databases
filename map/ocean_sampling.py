@@ -3,6 +3,8 @@
 
 Updates:
     
+    7/29/2016
+
     7/27/2016
         Tried optimization by using continent data at restricted latitude as 
         foreknowledge when placing boxes.  No need for this, checking whether in
@@ -31,6 +33,7 @@ To do:
     Need partial areas for boxes that overlap ocean and land?
     Numpy: index each box - should contain:
         (ids, coordinates, area)
+    
 """
 from mpl_toolkits.basemap import Basemap, pyproj
 from matplotlib.patches import Polygon
@@ -165,7 +168,7 @@ def pick_polygons(m,polygons,lat,delthe=1.):
         Greenland, for example, does not fall within this range, so do not check
         it.
     """
-    lats = [lat-.5,lat+.5]
+    lats = [lat-1.5,lat+1.5]
     lons = [0.,0.]
     x,y = m(lons,lats)
 
@@ -178,6 +181,16 @@ def pick_polygons(m,polygons,lat,delthe=1.):
 
     polygons = [Path(polygons[i]) for i in inds]
     return polygons
+
+def poly_bool(pts,closed_paths):
+    """Returns generator with one entry for each polygon indicating:
+        True: points are contained within the closed paths in question;
+        False: points are not contained within the closed paths.
+    Generator can be used with any()/all() more efficiently.
+    """
+    # print(list((p.contains_points(pts).any() for p in closed_paths)))
+    # the any() checks if any of pts are in a given polygon closed path
+    return (p.contains_points(pts).any() for p in closed_paths)
 
 def ocean_grid(plot=False):
     """Create plot for creating boxes of (nearly) equal side length.  The map
@@ -194,37 +207,53 @@ def ocean_grid(plot=False):
     else:
         m = Basemap(projection='hammer',lat_0=50.,lon_0=-40.)
 
-    # Get land polygons
+    # get boundaries of all land polygons
     polygons = [p.boundary for p in m.landpolygons]
 
-    # Set parameters for ocean grid coverage
     lon_0 = -20.
-    lat_0 = 30.
+    lat_0 = -30.
     del_lon = 60.
-    del_lat = 40.
-    box_size = 100000.
+    del_lat = 80.
+    box_size = 10000.
     # box_size = 1609.344
     upper_lat = lat_0 + del_lat
 
     all_vertices = list()
-    while lat_0 <= upper_lat:
+    check_verts = [1,2]
+    lat = lat_0
+    while lat <= upper_lat:
         
-        # Return angular height, width, and the contiguous boxes
-        delthe,_,boxes = lon_box_chain(m,size=box_size,lon_0=lon_0,
-                                        lat_0=lat_0,del_lon=del_lon)
+        # return angular height, width, and the contiguous boxes
+        delthe,_,boxes = lon_box_chain(m,size=box_size,lon_0=lon_0,lat_0=lat,
+                                       del_lon=del_lon)
 
-        subpolys = pick_polygons(m,polygons,lat_0,delthe)
+        # subset of land polynomial within relevant lat range
+        subpolys = pick_polygons(m,polygons,lat,delthe)
+        first_box = True
         for box in boxes:
             
-            # Get x,y from all four lon,lat of box corners
+            # get all vertices as well as just the East side of the box 
             x,y = m(box[0],box[1])
-            vertices = np.dstack((x,y))[0]
+            vertices = list(zip(x,y))
+            east_verts = [vertices[i] for i in [1,2]]
 
-            poly_bool = (p.contains_points(vertices).any() for p in subpolys)
-            if not any(poly_bool):
+            # accept or reject entire first box
+            # any() here checks if any polygon contains any of the points
+            if first_box:
+                first_box = False
+                if not any(poly_bool(vertices,subpolys)):
+                    all_vertices.append(vertices)
+                last_on_land = any(poly_bool(east_verts,subpolys))
+                continue
+
+            # check if East box side on land, West side checked in last iter
+            # keep if all box vertices are on water
+            next_on_land = any(poly_bool(east_verts,subpolys))
+            if (not last_on_land) and (not next_on_land):
                 all_vertices.append(vertices)
-        
-        lat_0 = lat_0+delthe
+            last_on_land = next_on_land
+
+        lat = lat+delthe
 
     if plot:
         coll = PolyCollection(all_vertices,facecolor='none',closed=True)
