@@ -39,11 +39,14 @@ from mpl_toolkits.basemap import Basemap, pyproj
 from matplotlib.patches import Polygon
 from matplotlib.collections import PolyCollection
 from matplotlib.path import Path
+from zodb.ocean_data import *
 import matplotlib.patches as patches
-
 import matplotlib.pyplot as plt
 import numpy as np
 import math
+import transaction
+from wee.ocean_data import *
+
 
 def lon_distance(Proj,pt1,pt2):
     """Meant to return distance longitudinally between two points at the same
@@ -188,14 +191,15 @@ def poly_bool(pts,closed_paths):
         False: points are not contained within the closed paths.
     Generator can be used with any()/all() more efficiently.
     """
-    # print(list((p.contains_points(pts).any() for p in closed_paths)))
-    # the any() checks if any of pts are in a given polygon closed path
     return (p.contains_points(pts).any() for p in closed_paths)
 
 def ocean_grid(plot=False):
-    """Create plot for creating boxes of (nearly) equal side length.  The map
+    """Create plot for creating boxes of (nearly) equal side lengths.  The map
     plot is a visual representation of the most important part, the grid.  The
     grid is an indexed by the lower lefthand corner of the boxes. 
+
+    Useful info:
+        meters/mile = 1609.344
     """
     # Set up figure and map if plot=True
     if plot:
@@ -210,50 +214,106 @@ def ocean_grid(plot=False):
     # get boundaries of all land polygons
     polygons = [p.boundary for p in m.landpolygons]
 
+    # set up sql table in wee.ocean_data
+    if Box.table_exists():
+        Box.drop_table()
+    db.create_table(Box)
+
+    # create dictionary and list for bulk sql insert 
+    d = dict()
+    data = list()
+
+    # parameters for ocean grid
+    # starting lat/lon
     lon_0 = -20.
-    lat_0 = -30.
+    lat_0 = 30.
+    # lat/lon spanned
     del_lon = 60.
-    del_lat = 80.
+    del_lat = 40.
+    # length of each side of box in meters
     box_size = 10000.
-    # box_size = 1609.344
+
     upper_lat = lat_0 + del_lat
 
     all_vertices = list()
     check_verts = [1,2]
     lat = lat_0
+    row, col = -1, -1
     while lat <= upper_lat:
         
+        # clear dictionary contents
+        d.clear()
+
+        # latitude index (row)
+        row += 1
+        col = -1
         # return angular height, width, and the contiguous boxes
-        delthe,_,boxes = lon_box_chain(m,size=box_size,lon_0=lon_0,lat_0=lat,
+        delthe,delphi,boxes = lon_box_chain(m,size=box_size,lon_0=lon_0,lat_0=lat,
                                        del_lon=del_lon)
 
         # subset of land polynomial within relevant lat range
         subpolys = pick_polygons(m,polygons,lat,delthe)
         first_box = True
-        for box in boxes:
-            
-            # get all vertices as well as just the East side of the box 
-            x,y = m(box[0],box[1])
-            vertices = list(zip(x,y))
-            east_verts = [vertices[i] for i in [1,2]]
+        
+        # out atomic, acts as a transaction
+        with db.atomic():
+        
+            for ibox,box in enumerate(boxes):
 
-            # accept or reject entire first box
-            # any() here checks if any polygon contains any of the points
-            if first_box:
-                first_box = False
-                if not any(poly_bool(vertices,subpolys)):
-                    all_vertices.append(vertices)
-                last_on_land = any(poly_bool(east_verts,subpolys))
-                continue
+                # longitude index (col)
+                col += 1
 
-            # check if East box side on land, West side checked in last iter
-            # keep if all box vertices are on water
-            next_on_land = any(poly_bool(east_verts,subpolys))
-            if (not last_on_land) and (not next_on_land):
-                all_vertices.append(vertices)
-            last_on_land = next_on_land
+                # get all vertices as well as just the East side of the box 
+                x,y = m(box[0],box[1])
+                vertices = list(zip(x,y))
+                east_verts = [vertices[i] for i in [1,2]]
 
-        lat = lat+delthe
+                # create box name in db
+                name = str(row)+"_"+str(col)
+
+                # Check all sides of the first box on ocean, only East side for rest
+                if first_box:
+                    first_box = False
+                    if not any(poly_bool(vertices,subpolys)):
+                        if plot:
+                            all_vertices.append(vertices)
+
+                        # add data fields to dictionary and add to list for bulk db insert
+                        d.update({'name':name ,'x_coords':x.__repr__(),'y_coords':y.__repr__()})
+                        data.append(d.copy())
+                    last_on_land = any(poly_bool(east_verts,subpolys))
+                    continue
+
+                # check if East box side on land, West side checked in last iter
+                # keep if all box vertices are on water
+                next_on_land = any(poly_bool(east_verts,subpolys))
+                if (not last_on_land) and (not next_on_land):
+                    if plot:
+                        all_vertices.append(vertices)
+                    # add data fields to dictionary and add to list for bulk insert
+                    d.update({'name':name ,'x_coords':x.__repr__(),'y_coords':y.__repr__()})
+                    data.append(d.copy())
+                last_on_land = next_on_land
+
+                # insert rows atomically - nested, so this is savepoint
+                if ibox % 100 == 0:
+                    with db.atomic():
+                        try:
+                            Box.insert_many(data).execute()
+                            data[:] = []
+                        except:
+                            pass
+            # next latitude
+            lat = lat+delthe
+
+            try:
+                with db.atomic():
+                    Box.insert_many(data).execute()
+                    data[:] = []
+            except:
+                pass
+    db.close()
+    # print(Box.select().count())
 
     if plot:
         coll = PolyCollection(all_vertices,facecolor='none',closed=True)
@@ -263,3 +323,6 @@ def ocean_grid(plot=False):
 
 if __name__ == '__main__':
     ocean_grid()
+
+    
+
