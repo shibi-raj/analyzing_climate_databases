@@ -210,110 +210,99 @@ def ocean_grid(plot=False):
         m.drawmeridians(np.arange(0,40,10.))
     else:
         m = Basemap(projection='hammer',lat_0=50.,lon_0=-40.)
-
     # get boundaries of all land polygons
     polygons = [p.boundary for p in m.landpolygons]
-
-    # set up sql table in wee.ocean_data
-    if Box.table_exists():
-        Box.drop_table()
-    db.create_table(Box)
-
-    # create dictionary and list for bulk sql insert 
-    d = dict()
-    data = list()
-
+    # set up sql tables
+    db.create_tables([Box,GridPoint,Longitude])
     # parameters for ocean grid
-    # starting lat/lon
-    lon_0 = -20.
+    lon_0 = 0.      # starting lat/lon
     lat_0 = 30.
-    # lat/lon spanned
-    del_lon = 60.
-    del_lat = 40.
-    # length of each side of box in meters
-    box_size = 10000.
-
+    del_lon = 10.     # lat/lon spanned
+    del_lat = 10.
+    box_size = 10000. # length of each side of box in meters
+    # set up for loop
+    d_box, d_lon = dict(), dict()    # dictionaries and lists sql insert 
+    data_box, data_lon = list(), list()
+    # d_
     upper_lat = lat_0 + del_lat
-
     all_vertices = list()
     check_verts = [1,2]
     lat = lat_0
     row, col = -1, -1
     while lat <= upper_lat:
-        
-        # clear dictionary contents
-        d.clear()
-
-        # latitude index (row)
-        row += 1
-        col = -1
+        d_box.clear()   # clear contents of dictionary for db insert
+        d_lon.clear()
+        row += 1    # latitude (row) 
+        col = -1    # longitude (col)
         # return angular height, width, and the contiguous boxes
-        delthe,delphi,boxes = lon_box_chain(m,size=box_size,lon_0=lon_0,lat_0=lat,
-                                       del_lon=del_lon)
-
+        delthe,delphi,boxes = lon_box_chain(
+                    m,
+                    size=box_size,
+                    lon_0=lon_0,
+                    lat_0=lat,
+                    del_lon=del_lon
+                    )
         # subset of land polynomial within relevant lat range
         subpolys = pick_polygons(m,polygons,lat,delthe)
-        first_box = True
-        
+        # add latitude to grid
+        with db.transaction():
+            latitude = GridPoint.create(latitude=lat,lat_index=row)
         # out atomic, acts as a transaction
         with db.atomic():
-        
             for ibox,box in enumerate(boxes):
-
-                # longitude index (col)
-                col += 1
-
-                # get all vertices as well as just the East side of the box 
                 x,y = m(box[0],box[1])
                 vertices = list(zip(x,y))
                 east_verts = [vertices[i] for i in [1,2]]
 
-                # create box name in db
-                name = str(row)+"_"+str(col)
+                col += 1                        # longitude index (col)
+                name = str(row)+"_"+str(col)    # db name of box
+                if col == 0:            # check western side of the box on land
+                    last_on_land = any(poly_bool([vertices[i] for i in [0,3]],subpolys)) 
+                d_lon.update({'lat':latitude,
+                           'lon':box[0][0],
+                           'lon_index':col,
+                           'on_land':True}
+                        )
 
-                # Check all sides of the first box on ocean, only East side for rest
-                if first_box:
-                    first_box = False
-                    if not any(poly_bool(vertices,subpolys)):
-                        if plot:
-                            all_vertices.append(vertices)
-
-                        # add data fields to dictionary and add to list for bulk db insert
-                        d.update({'name':name ,'x_coords':x.__repr__(),'y_coords':y.__repr__()})
-                        data.append(d.copy())
-                    last_on_land = any(poly_bool(east_verts,subpolys))
-                    continue
-
-                # check if East box side on land, West side checked in last iter
                 # keep if all box vertices are on water
                 next_on_land = any(poly_bool(east_verts,subpolys))
                 if (not last_on_land) and (not next_on_land):
+                    # add fields to dictionary and add to list for bulk insert
+                    d_box.update({'name':name ,
+                              'x_coords':x.__repr__(),
+                              'y_coords':y.__repr__(),
+                              'lons':box[0].__repr__(),
+                              'lats':box[1].__repr__()}
+                            )
+                    data_box.append(d_box.copy())
+                    d_lon.update({'on_land':False})
                     if plot:
                         all_vertices.append(vertices)
-                    # add data fields to dictionary and add to list for bulk insert
-                    d.update({'name':name ,'x_coords':x.__repr__(),'y_coords':y.__repr__()})
-                    data.append(d.copy())
+                data_lon.append(d_lon.copy())
+
                 last_on_land = next_on_land
 
                 # insert rows atomically - nested, so this is savepoint
                 if ibox % 100 == 0:
-                    with db.atomic():
-                        try:
-                            Box.insert_many(data).execute()
-                            data[:] = []
-                        except:
-                            pass
+                    if data_box:
+                        with db.atomic():
+                            Box.insert_many(data_box).execute()
+                            data_box[:] = []
+                    if data_lon:
+                        with db.atomic():
+                            Longitude.insert_many(data_lon).execute()
+                            data_lon[:] = []
             # next latitude
             lat = lat+delthe
-
-            try:
+            if data_box:
                 with db.atomic():
-                    Box.insert_many(data).execute()
-                    data[:] = []
-            except:
-                pass
+                    Box.insert_many(data_box).execute()
+                    data_box[:] = []
+            if data_lon:
+                with db.atomic():
+                    Longitude.insert_many(data_lon).execute()
+                    data_lon[:] = []
     db.close()
-    # print(Box.select().count())
 
     if plot:
         coll = PolyCollection(all_vertices,facecolor='none',closed=True)
@@ -322,7 +311,7 @@ def ocean_grid(plot=False):
 
 
 if __name__ == '__main__':
-    ocean_grid()
+    ocean_grid(plot=False)
 
     
 
