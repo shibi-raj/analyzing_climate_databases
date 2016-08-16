@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 """
 Set of functions to create and write out to file a nested dictionary called
 'stored_dictionary.json'.  The main keys of the dictionary are fields according
@@ -105,6 +106,103 @@ def create_dict():
     print_sorted_dict(d)
     write_dict(d)
 
+"""
+Create persistent dictionary of varied yearly time intervals: months, 
+half-months, half-month dates, and pentads.  Given a date, the dictionary will 
+be accessed with another routine to return the corresponding pentad.
+
+Example:
+    
+    date(March 4, 2011):
+        March 
+        -> month '3': 
+                {
+                '5': {
+                        'pentads': [13, 14, 15, 16], 
+                        
+                        'dates': [datetime.date(1900, 3, 2), 
+                                datetime.date(1900, 3, 21)]
+                }
+                '6': {
+                        'pentads': [17, 18, 19], 
+                        'dates': [datetime.date(1900, 3, 22),
+                                  datetime.date(1900, 4, 5)]
+                }
+        -> 'pentads': [13, 14, 15, 16]
+        -> pentad 13
+      
+      }
+
+Note: to make datetime.date work, all fields (year,month,day) are required.  The 
+time intervals do not depend on the year, so the year occuring in the code is 
+arbitrarily set to 1900.
+"""
+from datetime import date, datetime, timedelta
+from dateutil import relativedelta
+
+def yearly_time_intervals():
+    """Function for creating yearly time intervals for analysis purposes.  Data
+    stored in nested dictionary.
+
+    Nested dictionary key:value structure:
+
+        month number key:
+
+            half-month number key:
+
+                dates key: list of beginning and end dates of half-month period
+                       list(datetime beg, datetime end) 
+
+                pentads key: list of pentad indices corresponding to the 
+                        half-month, mostly 3 per half-month, except in March.
+    """
+    this_date = date(1900,1,1) # arbitrary
+    d_month = dict()
+    d_hmonth = dict()
+    d_intervals = dict()
+
+    delta = timedelta(days=14)
+    one_day = timedelta(days=1)
+
+    # initilize loop
+    next_year = this_date.year + 1
+    pentads = [-2,-1,0]
+    month = -1
+    halfmonth = 0
+    while this_date.year < next_year:
+        month = halfmonth//2 + 1
+
+        halfmonth += 1
+        
+        beg = this_date
+        end = this_date + delta
+        pentads = [p+3 for p in pentads[-3:]]
+        
+        # February and March have pentad irregularities, 
+        #   see Table A1.1 Bottomley
+        if beg.month == 2 and beg.day == 15:
+            end = end.replace(day=1)
+            end = end.replace(month=3)
+
+        if beg.month == 3 and beg.day == 2:
+            end = end.replace(day=21)
+            pentads.append(pentads[-1]+1)
+
+        d_intervals['pentads'] = pentads
+        d_intervals['dates'] = [beg,end]
+        if halfmonth % 2 == 1:
+            d_hmonth.clear()
+            d_hmonth[str(halfmonth)] = d_intervals.copy()
+        else:
+            d_hmonth[str(halfmonth)] = d_intervals.copy()
+            d_month[str(month)] = d_hmonth.copy()
+
+        this_date = end + one_day
+    return d_month
+
+def create_yearly_intervals():
+
 
 if __name__ == '__main__':
-    create_dict()
+    #create_dict()
+    create_yearly_intervals()
