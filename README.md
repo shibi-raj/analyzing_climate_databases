@@ -1,2 +1,111 @@
-# analyzing_climate_databases
-Codes for climate data modeling and analysis
+# # ${1:analyzing_climate_databases}
+Python codes for climate data modeling and analysis
+
+
+OBSERVATIONAL DATA
+==================
+
+get_icoads_data.py:
+    Main code for storing climate data in database.  
+
+    analyzing_climate_databases/icoads3/get_icoads_data.py
+    * this should be moved up a level to the package level
+
+    Current datasets: ICOADS 3.0.0
+
+
+icoads_store.py
+
+    analyzing_climate_databases/icoads3/icoads_store.py
+
+
+MAP BOX DATA
+============
+
+ocean_sampling.py:
+
+    analyzing_climate_databases/map/ocean_sampling.py
+    * this should be moved up a level to the package level
+    * databases should be stored in lower directory
+
+    Main code for generate boxes over ocean of prescribed size.
+
+    To do:
+        Rename module 'ocean_sampling' to 'ocean_grid_overlay'
+
+        Move up to top-level
+
+        Need to keep partial areas for boxes that overlap ocean and land?
+
+        Numpy: index each box - should contain:
+            (ids, coordinates, area)
+
+ocean_data.py:
+
+    analyzing_climate_databases/map/wee/ocean_data.py
+    * this should be moved up a level to the package level
+    * but databases should be stored in lower directory relative to it
+    * 'wee' should be changed to something else
+
+    ORM code for storing box data in database
+
+
+MERGING BOX DATA AND OBSERVATIONAL DATA
+=======================================
+
+merge_box_obs.py
+
+    analyzing_climate_databases/merge_box_icoads.py
+    * this should be moved up a level to the package level
+
+    Also, contains box_lookup(), a function to locate a box by lat/lon in order
+    to store observational data in that box 
+
+
+Updates
+=======
+
+    8/25/2016
+        Restructuring: moving main modules to the top level:
+            ocean_sampling.py - creates grid cover over the ocean
+
+            create_icoads_database.py - main feature, extracts data 
+            from the icoads data set and loads it into a database
+
+            merge_box_obs.py - merges the ocean grid cover data with 
+            icoads data
+
+        Restructuring: moved all orm table files to single folder, orm
+
+        Restructuring: all databases now created under single folder, 
+        databases
+
+    7/27/2016
+        Tried optimization by using continent data at restricted latitude as 
+        foreknowledge when placing boxes.  No need for this, checking whether in
+        polygons is simple enough and not computationally heavy.  Tried first 
+        with coast data, too complicated.
+
+    7/26/2016
+        Added optimizations
+        Timing benchmark (without showing plot):
+        • parameters
+            lon_0 = 0.
+            lat_0 = -45.
+            del_lon = 90.
+            del_lat = 90.0
+            box_size = 1600.
+        • No face color on boxes & without showing plot:  27.3 s
+        • With PolyCollection instead of Polygon: 24.1 s
+        • Replaced projected coordinates zip with np.dstack: 23.6
+    
+    7/25/2016
+        Added logic so boxes only appear on oceans, not land
+        Boxes drawn in spherical coordinates, 1 mile on each of three sides, most
+        northern depends on latutide
+
+To do
+=====
+
+ocean_sampling.py:
+
