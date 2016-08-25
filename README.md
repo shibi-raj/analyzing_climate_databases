@@ -7,16 +7,18 @@ Python codes for climate data modeling and analysis
 Observational data
 ==================
 
-get_icoads_data.py:
+create_icoads_database.py:
+
     Main code for storing climate data in database.  
 
-    analyzing_climate_databases/icoads3/get_icoads_data.py
+    location: analyzing_climate_databases/
     * this should be moved up a level to the package level
 
     Current data sets: ICOADS 3.0.0
 
 
-icoads_data_tables.py
+icoads_data_tables.py:
+
     ORM for icoads data.
 
     analyzing_climate_databases/icoads3/icoads_store.py
