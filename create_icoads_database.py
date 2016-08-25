@@ -19,18 +19,20 @@ requested from the input file, e.g., 'SST', the position is recalculated each
 time, and, thus, very inefficient.
 """
 from os import walk
-from icoads_store import *
-from create_dictionary import load_yearly_intervals
+from orm.icoads_data_tables import *
+from icoads3.create_dictionary import load_yearly_intervals
 from datetime import date, datetime, timedelta
 from dateutil import relativedelta
 import json
 import logging
 
+data_location = 'data_sets/icoads3.0.0/'
+
 def load_dict():
     """Load dictionary, stored_dictionary.json, of metadata according to 
     imma.txt.
     """
-    with open('stored_dictionary.json','r') as f:
+    with open('icoads3/lib/stored_dictionary.json','r') as f:
         try:        
             d = json.load(f)
         except Exception as e:
@@ -87,7 +89,8 @@ def get_value(keys,line,d):
     return values
 
 def imma_data_files():
-    (_, _, filenames) = next(walk('data/'))
+    (_, _, filenames) = next(walk(data_location))
+    filenames = [fn for fn in filenames if '.dat' in fn]
     filenames.sort()
     return filenames
 
@@ -198,14 +201,16 @@ def get_pentad(d,date):
     return pentads[-1]
 
 def main(start_mth,start_yr,end_mth,end_yr):
-    """Main execution sequence: load dictionary, retrieve raw lines, 
-    get_value(keys,line,dictionary).
+    """Main execution sequence: 
+        load dictionary,
+        retrieve raw lines,
+        get_value(keys,line,dictionary).
 
     Pentad and information of the like loaded from external dictionary via
     load_yearly_intervals().
     """
     # create db table
-    db.create_table(IcoadsData)
+    db_obs.create_table(IcoadsData)
 
     # set up data structures and data input files for a given time range
     d = load_dict()
@@ -223,15 +228,19 @@ def main(start_mth,start_yr,end_mth,end_yr):
     
     # loop over all data files
     err_count = 0
+    insert_count = 0
+    lines_count = 0
     for data_file in extraction_files:
 
         # open ICOADS data file
-        with open('data/'+data_file,"r",encoding='utf-8', errors='ignore') as f:
+        with open(data_location+data_file,"r",
+                encoding='utf-8', errors='ignore') as f:
             print(data_file)
         
             # create database transaction
-            with db.atomic():
+            with db_obs.atomic():
                 for i,line in enumerate(f.readlines()):
+                    lines_count += 1
                     extract_values = get_value(
                         ['lon','lat','sst','yr','mo','dy'],
                         line,
@@ -244,9 +253,9 @@ def main(start_mth,start_yr,end_mth,end_yr):
                                 int(extract_values[4]),
                                 int(extract_values[5]))
                         pentad = get_pentad(d_yearly_intervals,this_date)
-                        dict_icoads.update({'longitude':extract_values[0],
-                                'latitude':extract_values[1],
-                                'sea_surface_temp':extract_values[2],
+                        dict_icoads.update({'lon':extract_values[0],
+                                'lat':extract_values[1],
+                                'sst':extract_values[2],
                                 'date':this_date,
                                 'pentad':pentad
                                 })
@@ -257,26 +266,30 @@ def main(start_mth,start_yr,end_mth,end_yr):
                     except TypeError as te:
                         err_count += 1    
                         print(logging.exception(te))
-                        break
 
                     if i % 100 == 50 and data_icoads:
-                        # create data savepoint
-                        with db.atomic():
+                        # commit data to savepoint
+                        with db_obs.atomic():
+                            insert_count += len(data_icoads)
                             IcoadsData.insert_many(data_icoads).execute()
                             data_icoads[:] = []
         
                 if data_icoads:    
-                    # pick up leftover data not processed in the savepoint
-                    with db.atomic():
+                    # pick up leftover data not processed in the savepoints
+                    with db_obs.atomic():
+                        insert_count += len(data_icoads)
                         IcoadsData.insert_many(data_icoads).execute()
                         data_icoads[:] = []
-    db.close()
-    print("Error count:",err_count)
+    db_obs.close()
+    print("Error count:  ",err_count)
+    print("Insert count: ",insert_count)
+    print("Lines count:  ",lines_count)
 
 if __name__ == '__main__':
+    # pass
 
     # filenames = imma_data_files()
-    main(1,1854,2,1900)
+    main(1,1861,2,1861)
 
     # d = load_yearly_intervals()
     # date = datetime.strptime('2016-4-6','%Y-%m-%d').date()

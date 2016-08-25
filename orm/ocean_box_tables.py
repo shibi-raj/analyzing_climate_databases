@@ -1,61 +1,59 @@
 from peewee import *
 
-db = SqliteDatabase('ocean_data.db')
+db_box = SqliteDatabase('databases/ocean_box_data.db')
 
 class BaseModel(Model):
     class Meta:
-        database = db
+        database = db_box
 
 class Box(BaseModel):
-    """Class assigning data fields to each box row."""
-    name = CharField()      # id of box: (lat_index)_(lon_index)
-    x_coords = CharField()  # projected map coordinates
+    """Class assigning data fields to each box row.
+    
+    Variable definitions:
+        name: string id of box, (lat_index)_(lon_index)
+        x_coords/y-coords: projected map coordinates of box corners
+        lons/lats: geographic coordinates of box corners
+        area: area of given box
+        sst: sea-surface temperature, to be filled from ICOADS data
+    """
+    name = CharField()      
+    x_coords = CharField()  
     y_coords = CharField()
-    lons = CharField()      # geographic coordinates of box corners
+    lons = CharField()      
     lats = CharField()
-    area = CharField(null=True) # box area
-    # Sea-surface temperature, will get this value from ICOADS
-    sst = CharField(null=True)
+    area = FloatField(null=True) 
+    sst = FloatField(null=True)  
     class Meta:
-        # primary_key = False
         order_by = ('name',)
 
 class GridPoint(BaseModel):
     """Store of ocean grid created in ocean_sampling module.
+    
     For each unique latitude a row of boxes are created longitudinally, hench
     latitude is a unique key.
     """
-    latitude = CharField(unique=True)
+    lat_box = FloatField(unique=True)
     lat_index  = IntegerField()
     class Meta:
-        order_by = ('latitude',)
+        order_by = ('lat_box','lat_index',)
 
 class Longitude(BaseModel):
-    lat = ForeignKeyField(GridPoint)
-    lon = CharField()
+    lat_box = ForeignKeyField(GridPoint)
+    lon_box = FloatField()
     lon_index = IntegerField()
     on_land = BooleanField()
     class Meta:
-        order_by = ('lon',)
+        order_by = ('lon_box','lon_index',)
+
 
 if __name__ == '__main__':
-    if not GridPoint.table_exists():
-        db.create_table(GridPoint)
+    i_lon,i_lat = box_lookup(4.,-3.6)
+    name = str(i_lat)+'_'+str(i_lon)
+    
+    Box.update(sst=1.8).where(Box.name==name).execute()
+    
+    for b in Box.select().where(Box.name==name):
+        print(b.sst,b.name,b.lons,b.lats)
+    
+    db_box.close()
 
-    try:
-        with db.transaction():
-            latitude = GridPoint.create(
-                latitude=0.12
-            )
-    except IntegrityError:
-        flash('That latitude is already taken.')
-
-    if not Longitude.table_exists():
-        db.create_table(Longitude)
-
-    with db.transaction():
-        Longitude.create(lat=latitude,lon=0.13)
-
-    query = Longitude.select().join(GridPoint).where(GridPoint.latitude == 0.12)
-    for each in query:
-        print (each.lon)

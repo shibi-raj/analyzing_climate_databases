@@ -1,51 +1,16 @@
 #!/usr/bin/env/python3
-"""Set of functions to put equal area boxes on the worlds' oceans.  
-
-Updates:
-    
-    7/29/2016
-
-    7/27/2016
-        Tried optimization by using continent data at restricted latitude as 
-        foreknowledge when placing boxes.  No need for this, checking whether in
-        polygons is simple enough and not computationally heavy.  Tried first 
-        with coast data, too complicated.
-
-    7/26/2016
-        Added optimizations
-        Timing benchmark (without showing plot):
-        • parameters
-            lon_0 = 0.
-            lat_0 = -45.
-            del_lon = 90.
-            del_lat = 90.0
-            box_size = 1600.
-        • No face color on boxes & without showing plot:  27.3 s
-        • With PolyCollection instead of Polygon: 24.1 s
-        • Replaced projected coordinates zip with np.dstack: 23.6
-    
-    7/25/2016
-        Added logic so boxes only appear on oceans, not land
-        Boxes drawn in spherical coordinates, 1 mile on each of three sides, most
-        northern depends on latutide
-
-To do:
-    Need partial areas for boxes that overlap ocean and land?
-    Numpy: index each box - should contain:
-        (ids, coordinates, area)
-    
-"""
+"""Set of functions to put equal area boxes on the worlds' oceans."""
 from mpl_toolkits.basemap import Basemap, pyproj
 from matplotlib.patches import Polygon
 from matplotlib.collections import PolyCollection
 from matplotlib.path import Path
-from zodb.ocean_data import *
+# from zodb.ocean_data import *
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
 import math
 import transaction
-from wee.ocean_data import *
+from orm.ocean_box_tables import *
 
 
 def lon_distance(Proj,pt1,pt2):
@@ -136,7 +101,7 @@ def make_box(proj,lon,lat,delphi,delthe):
     lats = list(lats)
     return lons,lats
 
-def lon_box_chain(proj,size=100000.,lon_0=0.,lat_0=0.,del_lon=50.):
+def lon_box_chain(proj,upper_lat,size=100000.,lon_0=0.,lat_0=0.,del_lon=50.):
     """Create adjoining boxes same latitude through specified longitudinal 
     angle.  Boxes start at Prime Meridian and travels East.
 
@@ -150,13 +115,18 @@ def lon_box_chain(proj,size=100000.,lon_0=0.,lat_0=0.,del_lon=50.):
     # Calculate increment in latitude (angular height), delta theta
     delthe = size/R
     delthe = delthe*180./math.pi
+    if lat_0 + delthe > upper_lat:
+        delthe = upper_lat - lat_0 
     
     # Calculate lons/lats for ll corner of each box
     lons = lon_0 + np.arange(0.,del_lon,delphi)
     lats = [lat_0 for lon in lons]
     pts = list(zip(lons,lats))
     boxes = list()
-    for pt in pts:
+    last = len(pts)-1
+    for ipt,pt in enumerate(pts):
+        if ipt == last:
+            delphi = lon_0 + del_lon - lons[-1]
         boxes.append(make_box(proj,pt[0],pt[1],delphi,delthe))
     return delthe,delphi,boxes
 
@@ -213,13 +183,13 @@ def ocean_grid(plot=False):
     # get boundaries of all land polygons
     polygons = [p.boundary for p in m.landpolygons]
     # set up sql tables
-    db.create_tables([Box,GridPoint,Longitude])
+    db_box.create_tables([Box,GridPoint,Longitude])
     # parameters for ocean grid
-    lon_0 = 0.      # starting lat/lon
-    lat_0 = 30.
-    del_lon = 10.     # lat/lon spanned
-    del_lat = 10.
-    box_size = 10000. # length of each side of box in meters
+    lon_0 = 300.      # starting lat/lon
+    lat_0 = -40.
+    del_lon = 60.     # lat/lon spanned
+    del_lat = 80.
+    box_size = 1000000. # length of each side of box in meters
     # set up for loop
     d_box, d_lon = dict(), dict()    # dictionaries and lists sql insert 
     data_box, data_lon = list(), list()
@@ -229,7 +199,7 @@ def ocean_grid(plot=False):
     check_verts = [1,2]
     lat = lat_0
     row, col = -1, -1
-    while lat <= upper_lat:
+    while lat < upper_lat:
         d_box.clear()   # clear contents of dictionary for db insert
         d_lon.clear()
         row += 1    # latitude (row) 
@@ -240,15 +210,15 @@ def ocean_grid(plot=False):
                     size=box_size,
                     lon_0=lon_0,
                     lat_0=lat,
-                    del_lon=del_lon
+                    del_lon=del_lon,
+                    upper_lat=upper_lat
                     )
         # subset of land polynomial within relevant lat range
         subpolys = pick_polygons(m,polygons,lat,delthe)
-        # add latitude to grid
-        with db.transaction():
-            latitude = GridPoint.create(latitude=lat,lat_index=row)
+        with db_box.transaction():  # add latitude to grid
+            latitude = GridPoint.create(lat_box=lat,lat_index=row)
         # out atomic, acts as a transaction
-        with db.atomic():
+        with db_box.atomic():
             for ibox,box in enumerate(boxes):
                 x,y = m(box[0],box[1])
                 vertices = list(zip(x,y))
@@ -257,9 +227,11 @@ def ocean_grid(plot=False):
                 col += 1                        # longitude index (col)
                 name = str(row)+"_"+str(col)    # db name of box
                 if col == 0:            # check western side of the box on land
-                    last_on_land = any(poly_bool([vertices[i] for i in [0,3]],subpolys)) 
-                d_lon.update({'lat':latitude,
-                           'lon':box[0][0],
+                    last_on_land = any(poly_bool(
+                        [vertices[i] for i in [0,3]],subpolys)
+                            ) 
+                d_lon.update({'lat_box':latitude,
+                           'lon_box':box[0][0],
                            'lon_index':col,
                            'on_land':True}
                         )
@@ -282,28 +254,26 @@ def ocean_grid(plot=False):
 
                 last_on_land = next_on_land
 
-                # insert rows atomically - nested, so this is savepoint
                 if ibox % 100 == 0:
                     if data_box:
-                        with db.atomic():
+                        with db_box.atomic(): # insert rows atomically - savepoints
                             Box.insert_many(data_box).execute()
                             data_box[:] = []
                     if data_lon:
-                        with db.atomic():
+                        with db_box.atomic():
                             Longitude.insert_many(data_lon).execute()
                             data_lon[:] = []
             # next latitude
             lat = lat+delthe
             if data_box:
-                with db.atomic():
+                with db_box.atomic():
                     Box.insert_many(data_box).execute()
                     data_box[:] = []
             if data_lon:
-                with db.atomic():
+                with db_box.atomic():
                     Longitude.insert_many(data_lon).execute()
                     data_lon[:] = []
-    db.close()
-
+    db_box.close()
     if plot:
         coll = PolyCollection(all_vertices,facecolor='none',closed=True)
         ax.add_collection(coll)
@@ -311,7 +281,7 @@ def ocean_grid(plot=False):
 
 
 if __name__ == '__main__':
-    ocean_grid(plot=False)
+    ocean_grid(plot=True)
 
     
 
