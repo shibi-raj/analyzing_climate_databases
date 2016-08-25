@@ -2,7 +2,7 @@
 Python codes for climate data modeling and analysis
 
 
-OBSERVATIONAL DATA
+Observational data
 ==================
 
 get_icoads_data.py:
@@ -11,66 +11,64 @@ get_icoads_data.py:
     analyzing_climate_databases/icoads3/get_icoads_data.py
     * this should be moved up a level to the package level
 
-    Current datasets: ICOADS 3.0.0
+    Current data sets: ICOADS 3.0.0
 
 
-icoads_store.py
+icoads_data_tables.py
+    ORM for icoads data.
 
     analyzing_climate_databases/icoads3/icoads_store.py
 
 
-MAP BOX DATA
+Map box data
 ============
 
-ocean_sampling.py:
+ocean_grid_overlay.py:
 
-    analyzing_climate_databases/map/ocean_sampling.py
-    * this should be moved up a level to the package level
-    * databases should be stored in lower directory
+    location: analyzing_climate_databases/orm/
 
     Main code for generate boxes over ocean of prescribed size.
 
     To do:
-        Rename module 'ocean_sampling' to 'ocean_grid_overlay'
-
-        Move up to top-level
-
         Need to keep partial areas for boxes that overlap ocean and land?
 
         Numpy: index each box - should contain:
             (ids, coordinates, area)
 
-ocean_data.py:
+ocean_box_tables.py:
 
-    analyzing_climate_databases/map/wee/ocean_data.py
-    * this should be moved up a level to the package level
-    * but databases should be stored in lower directory relative to it
-    * 'wee' should be changed to something else
+    location: analyzing_climate_databases/orm/
 
     ORM code for storing box data in database
 
 
-MERGING BOX DATA AND OBSERVATIONAL DATA
+Merging box data and observational data
 =======================================
 
 merge_box_obs.py
 
-    analyzing_climate_databases/merge_box_icoads.py
-    * this should be moved up a level to the package level
+    location: analyzing_climate_databases/
 
-    Also, contains box_lookup(), a function to locate a box by lat/lon in order
-    to store observational data in that box 
+    Contains box_lookup(), a function to locate a box by lat/lon in order to store observational data in that box 
+
+merge_box_icoads_tables.py:
+
+    location: analyzing_climate_databases/orm/
+
+    ORM code for merging ICOADS data and box data into a single database
 
 
 Updates
 =======
 
     8/25/2016
-        Restructuring: moving main modules to the top level:
-            ocean_sampling.py - creates grid cover over the ocean
+        Restructuring: moving main modules to the top level and renamed:
+            ocean_sampling.py --> ocean_grid_overlay - creates grid 
+            cover over the ocean
 
-            create_icoads_database.py - main feature, extracts data 
-            from the icoads data set and loads it into a database
+            get_icoads_data --> create_icoads_database.py - main 
+            feature, extracts data from the icoads data set and loads 
+            it into a database
 
             merge_box_obs.py - merges the ocean grid cover data with 
             icoads data
@@ -107,5 +105,4 @@ Updates
 To do
 =====
 
-ocean_sampling.py:
 
