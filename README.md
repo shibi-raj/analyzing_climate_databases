@@ -12,7 +12,6 @@ create_icoads_database.py:
     Main code for storing climate data in database.  
 
     location: analyzing_climate_databases/
-    * this should be moved up a level to the package level
 
     Current data sets: ICOADS 3.0.0
 
@@ -21,7 +20,7 @@ icoads_data_tables.py:
 
     ORM for icoads data.
 
-    analyzing_climate_databases/icoads3/icoads_store.py
+    location: analyzing_climate_databases/orm/
 
 
 Map box data
@@ -29,7 +28,7 @@ Map box data
 
 ocean_grid_overlay.py:
 
-    location: analyzing_climate_databases/orm/
+    location: analyzing_climate_databases/
 
     Main code for generate boxes over ocean of prescribed size.
 
