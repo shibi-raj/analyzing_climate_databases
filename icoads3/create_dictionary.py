@@ -85,14 +85,14 @@ def print_sorted_dict(d):
         print(key,d[key])
         # print(key,get_position(key,sorted_keys,d))
 
-def write_dict(d):
+def write_dict(d,filename='icoads3/lib/stored_dictionary.json'):
     """Write out the dictionary in JSON format"""
-    with open('stored_dictionary.json','w') as f:
+    with open(filename,'w') as f:
         json.dump(d,f)
 
-def check_dump():
+def check_dump(filename='icoads3/lib/stored_dictionary.json'):
     """Verify dictionary contents match those in 'imma.txt'."""
-    with open('store_dictionary.json','r') as f:
+    with open(filename,'r') as f:
         try:        
             d = json.load(f)
             for each in d:
@@ -105,6 +105,8 @@ def create_dict():
     d = add_position_field(d)
     print_sorted_dict(d)
     write_dict(d)
+
+
 
 """
 Create persistent dictionary of varied yearly time intervals: months, 
@@ -120,13 +122,13 @@ Example:
                 '5': {
                         'pentads': [13, 14, 15, 16], 
                         
-                        'dates': [datetime.date(1900, 3, 2), 
-                                datetime.date(1900, 3, 21)]
+                        'dates': [datetime.date(2016, 3, 2), 
+                                datetime.date(2016, 3, 21)]
                 }
                 '6': {
                         'pentads': [17, 18, 19], 
-                        'dates': [datetime.date(1900, 3, 22),
-                                  datetime.date(1900, 4, 5)]
+                        'dates': [datetime.date(2016, 3, 22),
+                                  datetime.date(2016, 4, 5)]
                 }
         -> 'pentads': [13, 14, 15, 16]
         -> pentad 13
@@ -135,14 +137,16 @@ Example:
 
 Note: to make datetime.date work, all fields (year,month,day) are required.  The 
 time intervals do not depend on the year, so the year occuring in the code is 
-arbitrarily set to 1900.
+arbitrarily set to 2016.  Made sure to choose a leap year so as to account for
+the date February 29 to be used as an input, and its pentad returned.
 """
 from datetime import date, datetime, timedelta
-from dateutil import relativedelta
 
 def yearly_time_intervals():
     """Function for creating yearly time intervals for analysis purposes.  Data
-    stored in nested dictionary.
+    to be stored in nested dictionary, and the dates are converted to strings
+    for serialization.  
+
 
     Nested dictionary key:value structure:
 
@@ -155,8 +159,15 @@ def yearly_time_intervals():
 
                 pentads key: list of pentad indices corresponding to the 
                         half-month, mostly 3 per half-month, except in March.
+
+    Supplemental functions:
+        
+        create_yearly_intervals(): write dictionary to file 
+        
+        load_yearly_intervals(): fetch dictionary, convert date strings to
+            datetime.date objects
     """
-    this_date = date(1900,1,1) # arbitrary
+    this_date = date(2016,1,1) # arbitrary
     d_month = dict()
     d_hmonth = dict()
     d_intervals = dict()
@@ -189,7 +200,7 @@ def yearly_time_intervals():
             pentads.append(pentads[-1]+1)
 
         d_intervals['pentads'] = pentads
-        d_intervals['dates'] = [beg,end]
+        d_intervals['dates'] = [beg.__str__(),end.__str__()]
         if halfmonth % 2 == 1:
             d_hmonth.clear()
             d_hmonth[str(halfmonth)] = d_intervals.copy()
@@ -200,9 +211,43 @@ def yearly_time_intervals():
         this_date = end + one_day
     return d_month
 
+def load_yearly_intervals(filename='icoads3/lib/yearly_time_intervals_store.json'):
+    """Load dictionary containing the correspondence of the different varied
+    intervals, e.g., pentads, half-months, etc.  
+
+    Note: the datetime objects were not serializable, so they were converted to
+    strings when written to file.  Below, they are returned to datetime.date
+    objects.
+    """
+
+    with open(filename,'r') as f:
+        try:        
+            d = json.load(f)
+        except Exception as e:
+            print(e)
+
+    # convert dates in dictionary to datetime.date objects
+    for month in d:
+        for half_month in d[month]:
+            d[month][half_month]['dates'][0] = datetime.strptime(
+                d[month][half_month]['dates'][0],'%Y-%m-%d').date()
+            d[month][half_month]['dates'][1] = datetime.strptime(
+                d[month][half_month]['dates'][1],'%Y-%m-%d').date()
+    return d
+
 def create_yearly_intervals():
+    "Write yearly time interval dictionary to file."
+    filename = 'lib/yearly_time_intervals_store.json'
+    d = yearly_time_intervals()
+    write_dict(d,filename)
+    print(load_yearly_intervals(filename))
 
 
 if __name__ == '__main__':
-    #create_dict()
-    create_yearly_intervals()
+    # 1st: imma dictionary
+    # check_dump() # can be called on stored dictionary without an argument
+    # # create_dict()   # recreate the dictionary if desired
+
+    # 2nd: yearly time interval dictionary
+    print(load_yearly_intervals()) # run to print dictionary contents
+    # # create_yearly_intervals() # recreated dictionary if desired
