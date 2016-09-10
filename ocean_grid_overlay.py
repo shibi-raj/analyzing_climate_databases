@@ -11,7 +11,8 @@ import numpy as np
 import math
 import transaction
 from orm.ocean_box_tables import *
-
+from orm.icoads_data_tables import *
+from observations_on_map import map_lons
 
 def lon_distance(Proj,pt1,pt2):
     """Meant to return distance longitudinally between two points at the same
@@ -88,13 +89,17 @@ def make_box(proj,lon,lat,delphi,delthe):
         lon: longitude ll corner
         lat: latitude ll corner
         side: length of side of the square patch
+
+    Order of output:
+        clockwise starting at ll corner
+        lower left, upper left, upper right, lower right
     """
     aug_lon = lon+delphi
     aug_lat = lat+delthe
     pt00 = [lon,lat]
     pt01 = [lon,aug_lat]
-    pt10 = [aug_lon,lat]
     pt11 = [aug_lon,aug_lat]
+    pt10 = [aug_lon,lat]
     pts = [pt00,pt01,pt11,pt10]
     lons,lats = zip(*pts)
     lons = list(lons)
@@ -127,7 +132,7 @@ def lon_box_chain(proj,upper_lat,size=100000.,lon_0=0.,lat_0=0.,del_lon=50.):
     for ipt,pt in enumerate(pts):
         if ipt == last:
             delphi = lon_0 + del_lon - lons[-1]
-        boxes.append(make_box(proj,pt[0],pt[1],delphi,delthe))
+        boxes.append(make_box(proj,pt[0],lat_0,delphi,delthe))
     return delthe,delphi,boxes
 
 def pick_polygons(m,polygons,lat,delthe=1.):
@@ -161,9 +166,12 @@ def poly_bool(pts,closed_paths):
         False: points are not contained within the closed paths.
     Generator can be used with any()/all() more efficiently.
     """
-    return (p.contains_points(pts).any() for p in closed_paths)
+    # print("inside poly_bool")
+    # print("removing .any()")
+    # return (p.contains_points(pts).any() for p in closed_paths)
+    return (p.contains_points(pts) for p in closed_paths)
 
-def ocean_grid(plot=False):
+def ocean_grid(plot=False,with_icoads=False):
     """Create plot for creating boxes of (nearly) equal side lengths.  The map
     plot is a visual representation of the most important part, the grid.  The
     grid is an indexed by the lower lefthand corner of the boxes. 
@@ -175,21 +183,24 @@ def ocean_grid(plot=False):
     if plot:
         fig = plt.figure()
         ax = fig.add_subplot(1,1,1)
-        m = Basemap(projection='hammer',lat_0=50.,lon_0=-40.,ax=ax)
+        # Old map with hammer projection
+        # m = Basemap(projection='hammer',lat_0=0.,lon_0=-180.,ax=ax)
+        m = Basemap(projection='merc',llcrnrlat=-85,urcrnrlat=85,\
+            llcrnrlon=-180,urcrnrlon=180,lat_ts=0.,resolution='c')
         m.drawcoastlines()
-        m.drawmeridians(np.arange(0,40,10.))
+        # m.drawmeridians(np.arange(0,40,10.))
     else:
         m = Basemap(projection='hammer',lat_0=50.,lon_0=-40.)
     # get boundaries of all land polygons
     polygons = [p.boundary for p in m.landpolygons]
     # set up sql tables
-    db_box.create_tables([Box,GridPoint,Longitude])
+    db_box.create_tables([Box,Latitude,Longitude,ObsData])
     # parameters for ocean grid
-    lon_0 = 300.      # starting lat/lon
-    lat_0 = -40.
-    del_lon = 60.     # lat/lon spanned
-    del_lat = 80.
-    box_size = 1000000. # length of each side of box in meters
+    lon_0 = -180.      # starting lat/lon
+    lat_0 = -85
+    del_lon = 360.     # lat/lon spanned
+    del_lat = 170.
+    box_size = 100000. # length of each side of box in meters
     # set up for loop
     d_box, d_lon = dict(), dict()    # dictionaries and lists sql insert 
     data_box, data_lon = list(), list()
@@ -199,6 +210,10 @@ def ocean_grid(plot=False):
     check_verts = [1,2]
     lat = lat_0
     row, col = -1, -1
+
+    number_of_boxes = 0
+    number_near_land = 0
+
     while lat < upper_lat:
         d_box.clear()   # clear contents of dictionary for db insert
         d_lon.clear()
@@ -216,44 +231,69 @@ def ocean_grid(plot=False):
         # subset of land polynomial within relevant lat range
         subpolys = pick_polygons(m,polygons,lat,delthe)
         with db_box.transaction():  # add latitude to grid
-            latitude = GridPoint.create(lat_box=lat,lat_index=row)
+            latitude = Latitude.create(lat_box=lat,lat_index=row)
         # out atomic, acts as a transaction
         with db_box.atomic():
             for ibox,box in enumerate(boxes):
                 x,y = m(box[0],box[1])
                 vertices = list(zip(x,y))
-                east_verts = [vertices[i] for i in [1,2]]
+                east_verts = [vertices[i] for i in [2,3]]
 
                 col += 1                        # longitude index (col)
                 name = str(row)+"_"+str(col)    # db name of box
                 if col == 0:            # check western side of the box on land
-                    last_on_land = any(poly_bool(
-                        [vertices[i] for i in [0,3]],subpolys)
-                            ) 
-                d_lon.update({'lat_box':latitude,
-                           'lon_box':box[0][0],
-                           'lon_index':col,
-                           'on_land':True}
+                    containing_polygons = poly_bool(
+                        [vertices[i] for i in [0,1]],subpolys
                         )
+                    last_on_land_count = 0
+                    for cp in containing_polygons:
+                        if cp.any():
+                            last_on_land_count = sum(cp)
+                            break
 
                 # keep if all box vertices are on water
-                next_on_land = any(poly_bool(east_verts,subpolys))
-                if (not last_on_land) and (not next_on_land):
-                    # add fields to dictionary and add to list for bulk insert
+                containing_polygons = list(poly_bool(east_verts,subpolys))
+                next_on_land_count = 0
+                for cp in containing_polygons:
+                    if cp.any():
+                        next_on_land_count = sum(cp)
+                        break # only one polygon
+
+                # count total vertices on land
+                total_on_land_count = last_on_land_count + next_on_land_count
+
+                # if vertices on land less than specified amount, keep them
+                if total_on_land_count < 2:
+                    
+                    if total_on_land_count == 0:
+                        number_of_boxes +=1 
+                    else:
+                        number_near_land +=1
+
+                    # update box table values
                     d_box.update({'name':name ,
-                              'x_coords':x.__repr__(),
-                              'y_coords':y.__repr__(),
-                              'lons':box[0].__repr__(),
-                              'lats':box[1].__repr__()}
+                              'box_x_coords':x.__repr__(),
+                              'box_y_coords':y.__repr__(),
+                              'box_lons':box[0].__repr__(),
+                              'box_lats':box[1].__repr__(),
+                              'box_side':box_size,
+                              'on_land':False}
                             )
                     data_box.append(d_box.copy())
-                    d_lon.update({'on_land':False})
+
+                    # update longitude table values
+                    d_lon.update({'lat_box':latitude,
+                               'lon_box':box[0][0],
+                               'lon_index':col}
+                            )
+                    data_lon.append(d_lon.copy())
+
+                    # add points to plot
                     if plot:
                         all_vertices.append(vertices)
-                data_lon.append(d_lon.copy())
 
-                last_on_land = next_on_land
-
+                # update value, next become last on next iteration
+                last_on_land_count = next_on_land_count
                 if ibox % 100 == 0:
                     if data_box:
                         with db_box.atomic(): # insert rows atomically - savepoints
@@ -263,8 +303,11 @@ def ocean_grid(plot=False):
                         with db_box.atomic():
                             Longitude.insert_many(data_lon).execute()
                             data_lon[:] = []
+
             # next latitude
             lat = lat+delthe
+
+            # pick up rest of unstored data
             if data_box:
                 with db_box.atomic():
                     Box.insert_many(data_box).execute()
@@ -274,14 +317,34 @@ def ocean_grid(plot=False):
                     Longitude.insert_many(data_lon).execute()
                     data_lon[:] = []
     db_box.close()
+
+    print("Total number of boxes off land: ", number_of_boxes)
+    print("Total near land: ", number_near_land)
+    print("Estimated area of ocean: ", (box_size/1000.)**2.*number_of_boxes)
+
     if plot:
+
+
+        # show boxes on map
         coll = PolyCollection(all_vertices,facecolor='none',closed=True)
         ax.add_collection(coll)
+
+        # show icoads data on map
+        if with_icoads:
+            data_coords = list()
+            for data in IcoadsData.select():
+                data_coords.append([data.lon_obs, data.lat_obs])
+            lons,lats = zip(*data_coords)
+            lons = map_lons(-180,180,lons)
+            x,y = m(lons,lats)
+            m.scatter(x,y,.0001,marker='o',color='b')
+
+        # make plot
+        plt.title("Box size {} km".format(str(box_size/1000.)))
         plt.show()
 
-
 if __name__ == '__main__':
-    ocean_grid(plot=True)
+    ocean_grid(plot=True,with_icoads=False)
 
     
 
