@@ -114,7 +114,7 @@ def lon_box_chain(proj,upper_lat,size=100000.,lon_0=0.,lat_0=0.,del_lon=50.):
     """
     # Calculate increment of longitude (angular width), delta phi
     R = 6371000.
-    delphi = size/R*math.cos(lat_0*math.pi/180.)
+    delphi = size/(R*math.cos(lat_0*math.pi/180.))
     delphi = delphi*180/math.pi
 
     # Calculate increment in latitude (angular height), delta theta
@@ -197,10 +197,10 @@ def ocean_grid(plot=False,with_icoads=False):
     db_box.create_tables([Box,Latitude,Longitude,ObsData])
     # parameters for ocean grid
     lon_0 = -180.      # starting lat/lon
-    lat_0 = -85
+    lat_0 = -80.
     del_lon = 360.     # lat/lon spanned
-    del_lat = 170.
-    box_size = 100000. # length of each side of box in meters
+    del_lat = 165.
+    box_size = 100000. # length of each box side in meters
     # set up for loop
     d_box, d_lon = dict(), dict()    # dictionaries and lists sql insert 
     data_box, data_lon = list(), list()
@@ -320,7 +320,10 @@ def ocean_grid(plot=False,with_icoads=False):
 
     print("Total number of boxes off land: ", number_of_boxes)
     print("Total near land: ", number_near_land)
-    print("Estimated area of ocean: ", (box_size/1000.)**2.*number_of_boxes)
+    print("Estimated area of ocean (without near-land boxes): ",
+        (box_size/1000.)**2.*number_of_boxes)
+    print("Estimated area of ocean (with near-land boxes): ",
+        (box_size/1000.)**2.*(number_of_boxes+number_near_land))
 
     if plot:
 
@@ -344,7 +347,7 @@ def ocean_grid(plot=False,with_icoads=False):
         plt.show()
 
 if __name__ == '__main__':
-    ocean_grid(plot=True,with_icoads=False)
+    ocean_grid(plot=False,with_icoads=False)
 
     
 
