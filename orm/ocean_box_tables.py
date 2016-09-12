@@ -1,6 +1,13 @@
 from peewee import *
 
-db_box = SqliteDatabase('data_sets/databases/ocean_box_data.db')
+db_box = SqliteDatabase('data_sets/databases/ocean_box_data.db',
+    pragmas=(
+    ('journal_mode', 'WAL'),
+    ('cache_size', 980000),
+    ('synchronous',0),
+    ('mmap_size', 1024 * 1024 * 32),
+    )
+)
 
 class BaseModel(Model):
     class Meta:
@@ -16,7 +23,7 @@ class Box(BaseModel):
         area: area of given box
         sst: sea-surface temperature, to be filled from ICOADS data
     """
-    name = CharField()      
+    name = CharField(primary_key=True)      
     box_x_coords = CharField()  
     box_y_coords = CharField()
     box_lons = CharField()      
@@ -28,25 +35,39 @@ class Box(BaseModel):
         order_by = ('name',)
 
 class Latitude(BaseModel):
-    """Store of ocean grid created in ocean_sampling module.
-    
-    For each unique latitude a row of boxes are created longitudinally, hence
-    latitude is a unique key.
+    """For each unique latitude a row of boxes are created longitudinally.
+    Hence, the latitude index is a unique for each row of longitude boxes.
     """
-    # the latitude, fixed for chain of boxes along the latitude
-    lat_box = FloatField()
-    # integer index for the latitude which is a float
-    lat_index  = IntegerField(unique=True)
+    lat_box = FloatField() # the ll corner latitude of box
+    lat_index  = IntegerField(primary_key=True) # latitude index integer
     class Meta:
-        order_by = ('lat_box','lat_index',)
+        order_by = ('lat_box',)
 
 class Longitude(BaseModel):
-    lat_box = ForeignKeyField(Latitude, related_name="longitudes")
-    lon_box = FloatField()
-    lon_index = IntegerField()
-    class Meta:
-        order_by = ('lon_box','lon_index',)
+    """Longitude boxes reference their fixed latitude value.  'name' is also
+    specified longitude index created.
+    """
+    #       reference to Box
+    name = ForeignKeyField(Box,to_field='name',related_name='longitudes') 
+    # lat_box = ForeignKeyField(Latitude,related_name="longitudes") # ref Latitude
+    lon_box = FloatField() # the ll corner longitude of box
+    lon_index = IntegerField() # longitude index
+    
+    # temporary modifications
+    lat_index = ForeignKeyField(Latitude,to_field='lat_index',related_name="longitudes") # ref Latitude
 
+    class Meta:
+        order_by = ('lon_box',)
+
+class ObsData(BaseModel):
+    """Observational data."""
+    name = ForeignKeyField(Box,to_field='name',related_name='data')
+    lat_obs = FloatField()
+    lon_obs = FloatField()
+    sst = FloatField()
+    date = DateField()
+    pentad = IntegerField(null=True)
+    half_mth = IntegerField(null=True)
 
 if __name__ == '__main__':
 
