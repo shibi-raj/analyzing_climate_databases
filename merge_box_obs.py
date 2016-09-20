@@ -10,37 +10,34 @@ def box_lookup(obs_lat,obs_lon):
     """Look up the box indices for a measurement taken at coordinates obs_lat 
     and obs_lon.
     """
-    # retrieve latitude index
-    # t0 = time.time()
-    i_lat = Latitude.select(Latitude.lat_index).where(
-        Latitude.lat_box > obs_lat).limit(1).scalar() - 1
-    # t1 = time.time()
-    # print("total time1: ", t1-t0)
+    index_query = "select lat_index_id, lon_index-1 from longitude " \
+        + "join latitude on longitude.lat_index_id = latitude.lat_index " \
+        + "where lon_box > {} and lat_index_id ".format(obs_lon) \
+        + "in (select lat_index-1 " \
+        + "from latitude where lat_box > {} limit(1))".format(obs_lat) \
+        + " limit(1);"
+    
+    # print(index_query)
+    i_lat, i_lon = list(db_box.execute_sql(index_query))[0]
 
-    # get latitude object corresponding to that index
-    # latitude = Latitude.get(Latitude.lat_index == i_lat)
+    # Deprecated
 
-    i_lon = Longitude.select(Longitude.lon_index).join(Latitude).where(
-        Latitude.lat_index==22,
-        Longitude.lon_box>-65.0).limit(1).scalar() - 1 
-
-    # now, retrieve longitude index
-    # t2 = time.time()
-    # for lon in latitude.longitudes:
-    #     if lon.lon_box > obs_lon:
-    #         i_lon = lon.lon_index - 1
-    #         break
-    # t3 = time.time()
-    # print("total time2: ", t3-t2)
-
+    # # latitude index
+    # i_lat = Latitude.select(Latitude.lat_index).where(
+    #     Latitude.lat_box > obs_lat).limit(1).scalar()  - 1
+    # # longitude index
+    # i_lon = Longitude.select(Longitude.lon_index).join(Latitude).where(
+    #     Latitude.lat_index==i_lat,
+    #     Longitude.lon_box > obs_lon).limit(1).scalar() - 1 
     return i_lat,i_lon
 
-import time
-
 def icoads_to_boxes():
-    # Created (recreate ) merged box and observations database
-    db_box.drop_table(ObsData)
-    db_box.create_table(ObsData)
+    # Created (recreate) merged box and observations database
+    if ObsData.table_exists():
+        db_box.drop_table(ObsData)
+        db_box.create_table(ObsData)
+    else:
+        db_box.create_table(ObsData)
 
     # set up data structures for database
     dict_obs = dict()
@@ -51,12 +48,11 @@ def icoads_to_boxes():
     icoads_errors = 0
 
     with db_box.atomic():
-        for i, ic in enumerate(IcoadsData.select().limit(1000)):
+        for i, ic in enumerate(IcoadsData.select().iterator()):
             try:
                 # raises error if box_lookup does not work, i.e., can't find box
                 modified_lon = map_lons(ic.lon_obs)[0]
                 name = '_'.join(map(str,box_lookup(ic.lat_obs,modified_lon)))
-                
                 # Creating list of obs data for insert
                 dict_obs.update({
                     'name':name,
@@ -72,32 +68,34 @@ def icoads_to_boxes():
                 icoads_errors+=1
 
             # populating database tables
-            if i % 200 == 0 and data_obs:    
+            if i % 10000 == 0 and data_obs:    
                 with db_box.atomic():
-                    ObsData.insert_many(data_obs).execute()
+                    insert_limit = 400
+                    n_inserts = 0
+                    last_index = len(data_obs)-1
+                    while n_inserts <= last_index:
+                        upper = n_inserts + insert_limit
+                        if upper >= last_index:
+                            upper = last_index+1
+                        # print(n_inserts,upper, data_obs[n_inserts:upper])
+                        ObsData.insert_many(data_obs[n_inserts:upper]).execute()
+                        n_inserts = upper
                     total_icoads_inserts += len(data_obs)
-                    # print("... # inserts: ", total_icoads_inserts)
-                    # print("... # errors:  ", icoads_errors)
+                    print("Total ICOADS inserts: ", total_icoads_inserts)
                     sys.stdout.flush()
                     data_obs[:] = []
-            # if i % 1000 == 0 and data_obs:    
-            #     ObsData._meta.auto_increment = False
-            #     with db_box.transaction():
-            #         for obsdata in data_obs:
-            #             ObsData.insert(**obsdata).execute()
-            #         total_icoads_inserts += len(data_obs)
-            #         # print("... # inserts: ", total_icoads_inserts)
-            #         # print("... # errors:  ", icoads_errors)
-            #         sys.stdout.flush()
-            #         data_obs[:] = []
-            #     ObsData._meta.auto_increment = True
-
-
 
         # populating database tables, catch leftover
         with db_box.atomic():
             if data_obs:
-                ObsData.insert_many(data_obs).execute()
+                n_inserts = 0
+                last_index = len(data_obs)-1
+                while n_inserts <= last_index:
+                    upper = n_inserts + insert_limit
+                    if upper >= last_index:
+                        upper = last_index+1
+                    ObsData.insert_many(data_obs[n_inserts:upper]).execute()
+                    n_inserts = upper
                 total_icoads_inserts += len(data_obs)
 
     print("total inserts of ICOADS data: ", total_icoads_inserts)
@@ -105,5 +103,3 @@ def icoads_to_boxes():
 
 if __name__ == '__main__':
     icoads_to_boxes()
-    # lat_obs = 5.0
-    # lon_obs = -150.0
